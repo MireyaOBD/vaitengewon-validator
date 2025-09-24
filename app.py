@@ -1,20 +1,32 @@
 import os
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
-from flask_cors import CORS # <-- 1. Importamos la nueva herramienta
+from flask_cors import CORS
 
 # --- CONFIGURACIÓN ---
 load_dotenv()
 app = Flask(__name__)
 
-# --- 2. HABILITAMOS CORS ---
-# Esto le dice a nuestro servidor: "Permito peticiones desde cualquier origen".
-# Para producción, podríamos restringirlo solo a 'vaitengewon.club'. Por ahora, esto es suficiente.
-CORS(app) 
+# --- CORS MEJORADO ---
+# Configuración específica para WordPress
+CORS(app, 
+     origins=["https://vaitengewon.club", "https://www.vaitengewon.club"],
+     methods=["GET", "POST", "OPTIONS"],
+     allow_headers=["Content-Type", "Accept", "Origin", "X-Requested-With"],
+     supports_credentials=True
+)
 
-# --- ENDPOINT PRINCIPAL (sin cambios) ---
-@app.route("/analizar-idea", methods=['POST'])
+# --- ENDPOINT PRINCIPAL ---
+@app.route("/analizar-idea", methods=['POST', 'OPTIONS'])
 def analizar_idea():
+    # Manejar preflight OPTIONS request
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers.add('Access-Control-Allow-Origin', 'https://vaitengewon.club')
+        response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Accept')
+        return response
+    
     datos_recibidos = request.get_json()
     if not datos_recibidos:
         return jsonify({"error": "No se recibieron datos"}), 400
@@ -32,9 +44,14 @@ def analizar_idea():
         "usuario_id_confirmado": wp_user_id
     }
     
-    return jsonify(respuesta_para_wordpress)
+    response = jsonify(respuesta_para_wordpress)
+    response.headers.add('Access-Control-Allow-Origin', 'https://vaitengewon.club')
+    return response
 
-# Ruta de verificación (sin cambios)
+# Ruta de verificación
 @app.route("/")
 def index():
     return "El Cerebro IA está online y listo para recibir datos en /analizar-idea."
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
