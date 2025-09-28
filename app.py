@@ -1,410 +1,167 @@
+# app.py v5.0
+
 import os
-import logging
-from datetime import datetime
+import json
+import requests
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from flask_cors import CORS
-import openai
-import json
+from openai import OpenAI
 
 # --- CONFIGURACIÓN ---
 load_dotenv()
 app = Flask(__name__)
+CORS(app, resources={r"/analizar-idea": {"origins": "https://vaitengewon.club"}})
 
-# Configurar OpenAI
-openai.api_key = os.getenv('OPENAI_API_KEY')
+# Cliente de OpenAI (sintaxis v1.0+)
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Configurar logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# --- FUNCIONES DEL PIPELINE DE ANÁLISIS ---
 
-# --- CORS MEJORADO ---
-# Configuración específica para WordPress
-CORS(app, 
-     origins=["https://vaitengewon.club", "https://www.vaitengewon.club"],
-     methods=["GET", "POST", "OPTIONS"],
-     allow_headers=["Content-Type", "Accept", "Origin", "X-Requested-With"],
-     supports_credentials=True
-)
-
-# --- FUNCIONES DE ANÁLISIS DE NEGOCIO ---
 def analyze_business_ideas(user_data):
     """
-    Analiza las respuestas del usuario y genera ideas de negocio con análisis de viabilidad
+    Función principal que llama a OpenAI para analizar el perfil y generar 5 ideas de negocio.
     """
+    print(">>> Iniciando análisis completo con OpenAI...")
     try:
-        # Construir prompt para OpenAI
         prompt = f"""
-Eres un consultor experto en emprendimiento y análisis de viabilidad de negocios. 
+        Actúa como un consultor de negocios y estratega de startups de élite. Tu cliente es un emprendedor con el siguiente perfil:
+        - Punto de Partida (Idea o Intención): {user_data.get('punto_de_partida', 'No especificado')}
+        - Personalidad (Myers-Briggs): {user_data.get('personalidad_fundador', 'No especificado')}
+        - Pasiones y Hobbies: {user_data.get('pasiones_fundador', 'No especificado')}
+        - Recursos y Habilidades Actuales: {user_data.get('recursos_fundador', 'No especificado')}
+        - Estilo de Vida Deseado: {user_data.get('estilo_vida_deseado', 'No especificado')}
 
-ANÁLISIS DEL EMPRENDEDOR:
-- Punto de partida: {user_data.get('punto_de_partida', 'No especificado')}
-- Personalidad: {user_data.get('personalidad_fundador', 'No especificado')}
-- Pasiones: {user_data.get('pasiones_fundador', 'No especificado')}
-- Recursos y habilidades: {user_data.get('recursos_fundador', 'No especificado')}
-- Estilo de vida deseado: {user_data.get('estilo_vida_deseado', 'No especificado')}
+        TU TAREA PRINCIPAL:
+        Genera 5 ideas de negocio específicas, innovadoras y viables que se alineen perfectamente con el perfil completo del emprendedor. Si el emprendedor ya proporcionó una idea, úsala como inspiración para la primera idea y luego genera 4 alternativas superiores o complementarias.
 
-TAREA:
-Genera 5 ideas de negocio específicas y viables basadas en el perfil del emprendedor.
+        PARA CADA UNA DE LAS 5 IDEAS, DEBES PROPORCIONAR:
+        1.  "nombre": Un nombre atractivo para la idea de negocio.
+        2.  "descripcion": Una descripción concisa y potente (2-3 frases).
+        3.  "viabilidad_mercado": Un análisis orientativo del mercado. Indica si es un océano azul o rojo, el potencial de ingresos (bajo, medio, alto) y si es compatible con el estilo de vida deseado.
+        4.  "viabilidad_personal": Un análisis de la sinergia con el emprendedor. Evalúa cómo la idea se alinea con su personalidad, pasiones y habilidades. Identifica una habilidad clave (blanda o técnica, no financiera) que necesitaría desarrollar.
+        5.  "calificacion": Una calificación numérica de 1 a 5 (donde 5 es máxima viabilidad).
+        6.  "razon_calificacion": Una justificación breve y clara de por qué le diste esa calificación.
 
-Para cada idea, proporciona:
-1. Nombre de la idea
-2. Descripción breve (2-3 líneas)
-3. Análisis de viabilidad de mercado (demanda, competencia, tendencias)
-4. Análisis de viabilidad personal (recursos, habilidades, personalidad, estilo de vida)
-5. Calificación final de viabilidad (1-5, donde 5 es muy viable y 1 es viable pero necesita más recursos)
-
-FORMATO DE RESPUESTA (JSON):
-{{
-    "ideas": [
-        {{
-            "nombre": "Nombre de la idea",
-            "descripcion": "Descripción breve",
-            "viabilidad_mercado": "Análisis de mercado",
-            "viabilidad_personal": "Análisis personal",
-            "calificacion": 4,
-            "razon_calificacion": "Explicación de por qué esta calificación"
-        }}
-    ]
-}}
-
-Responde ÚNICAMENTE con el JSON válido, sin texto adicional.
-"""
-
-        # Llamar a OpenAI
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+        FORMATO DE RESPUESTA OBLIGATORIO:
+        Responde EXCLUSIVAMENTE con un objeto JSON válido que contenga una única clave "ideas", cuyo valor sea un array de los 5 objetos de idea. No incluyas ningún texto, explicación o markdown antes o después del JSON.
+        """
+        
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo-1106", # Modelo optimizado para JSON
             messages=[
-                {"role": "system", "content": "Eres un consultor experto en emprendimiento. Responde siempre en formato JSON válido."},
+                {"role": "system", "content": "Eres un consultor de negocios que solo responde con formato JSON."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=2000,
-            temperature=0.7
+            temperature=0.8, # Un poco más creativo
+            response_format={ "type": "json_object" }
         )
-        
-        # Procesar respuesta
-        content = response.choices[0].message.content.strip()
-        
-        # Limpiar respuesta si tiene markdown
-        if content.startswith('```json'):
-            content = content[7:]
-        if content.endswith('```'):
-            content = content[:-3]
-        
-        # Parsear JSON
-        analysis_result = json.loads(content)
-        
-        logger.info(f"Análisis completado exitosamente. Ideas generadas: {len(analysis_result.get('ideas', []))}")
-        return analysis_result
-        
-    except json.JSONDecodeError as e:
-        logger.error(f"Error parseando JSON de OpenAI: {e}")
-        return {"error": "Error procesando respuesta de IA", "ideas": []}
-    except Exception as e:
-        logger.error(f"Error en análisis de OpenAI: {e}")
-        return {"error": f"Error en análisis: {str(e)}", "ideas": []}
 
-def generate_html_report(analysis_data, user_data):
+        resultado_texto = response.choices[0].message.content
+        print(f">>> Respuesta JSON de OpenAI: {resultado_texto}")
+        return json.loads(resultado_texto) # Devuelve el objeto Python directamente
+
+    except Exception as e:
+        print(f"!!! Error en la llamada a OpenAI (analyze_business_ideas): {e}")
+        return {"error": f"Error en análisis de IA: {str(e)}", "ideas": []}
+
+def generate_html_report(analysis_data):
     """
-    Genera HTML estructurado para mostrar en WordPress
+    Genera un informe HTML a partir de los datos analizados por la IA.
     """
+    print(">>> Iniciando generación de reporte HTML...")
     try:
         ideas = analysis_data.get('ideas', [])
         if not ideas:
-            return "<p>No se pudieron generar ideas de negocio. Intenta nuevamente.</p>"
+            return "<h3>Error en el Análisis</h3><p>La IA no pudo generar ideas de negocio en este momento. Por favor, intenta de nuevo con respuestas más detalladas.</p>"
         
-        html = f"""
-        <div class="vaitengewon-analysis-report">
-            <h2>🚀 Análisis de Ideas de Negocio</h2>
-            <div class="analysis-summary">
-                <p><strong>Emprendedor:</strong> {user_data.get('personalidad_fundador', 'No especificado')}</p>
-                <p><strong>Área de interés:</strong> {user_data.get('punto_de_partida', 'No especificado')}</p>
-                <p><strong>Objetivo de vida:</strong> {user_data.get('estilo_vida_deseado', 'No especificado')}</p>
-            </div>
-            
-            <div class="business-ideas-container">
-        """
-        
+        html_cards = ""
         for i, idea in enumerate(ideas, 1):
             calificacion = idea.get('calificacion', 1)
             stars = "★" * calificacion + "☆" * (5 - calificacion)
             
-            html += f"""
-                <div class="business-idea-card">
-                    <div class="idea-header">
-                        <h3>💡 Idea #{i}: {idea.get('nombre', 'Sin nombre')}</h3>
-                        <div class="viability-score">
-                            <span class="stars">{stars}</span>
-                            <span class="score">{calificacion}/5</span>
-                        </div>
-                    </div>
-                    
-                    <div class="idea-content">
-                        <p class="idea-description">{idea.get('descripcion', 'Sin descripción')}</p>
-                        
-                        <div class="viability-analysis">
-                            <h4>📊 Análisis de Viabilidad</h4>
-                            <div class="market-analysis">
-                                <h5>Mercado:</h5>
-                                <p>{idea.get('viabilidad_mercado', 'Sin análisis')}</p>
-                            </div>
-                            <div class="personal-analysis">
-                                <h5>Personal:</h5>
-                                <p>{idea.get('viabilidad_personal', 'Sin análisis')}</p>
-                            </div>
-                            <div class="rating-explanation">
-                                <h5>Justificación de la calificación:</h5>
-                                <p>{idea.get('razon_calificacion', 'Sin justificación')}</p>
-                            </div>
-                        </div>
+            html_cards += f"""
+            <div class="idea-card">
+                <div class="idea-header">
+                    <h3>{i}. {idea.get('nombre', 'Sin Nombre')}</h3>
+                    <div class="score">
+                        <span class="stars">{stars}</span> ({calificacion}/5)
                     </div>
                 </div>
+                <div class="idea-body">
+                    <p><strong>Descripción:</strong> {idea.get('descripcion', 'N/A')}</p>
+                    <h4>Análisis de Viabilidad</h4>
+                    <p><strong>Mercado (Océano/Potencial):</strong> {idea.get('viabilidad_mercado', 'N/A')}</p>
+                    <p><strong>Sinergia Personal (Perfil/Habilidades):</strong> {idea.get('viabilidad_personal', 'N/A')}</p>
+                    <p><strong>Justificación de la Calificación:</strong> <em>{idea.get('razon_calificacion', 'N/A')}</em></p>
+                </div>
+            </div>
             """
         
-        html += """
-            </div>
-            
-            <div class="analysis-footer">
-                <p><em>Análisis generado por Vaitengewon IA - {timestamp}</em></p>
-            </div>
-        </div>
-        
+        # Estilos CSS embebidos para que se vea bien en WordPress sin depender de archivos externos
+        styles = """
         <style>
-        .vaitengewon-analysis-report {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            font-family: Arial, sans-serif;
-        }
-        
-        .analysis-summary {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-        }
-        
-        .business-idea-card {
-            border: 1px solid #ddd;
-            border-radius: 12px;
-            margin-bottom: 20px;
-            overflow: hidden;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        
-        .idea-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 15px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .idea-header h3 {
-            margin: 0;
-            font-size: 1.2em;
-        }
-        
-        .viability-score {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        .stars {
-            color: #ffd700;
-            font-size: 1.2em;
-        }
-        
-        .score {
-            background: rgba(255,255,255,0.2);
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-weight: bold;
-        }
-        
-        .idea-content {
-            padding: 20px;
-        }
-        
-        .idea-description {
-            font-size: 1.1em;
-            margin-bottom: 15px;
-            color: #333;
-        }
-        
-        .viability-analysis h4 {
-            color: #667eea;
-            margin-bottom: 15px;
-        }
-        
-        .viability-analysis h5 {
-            color: #555;
-            margin-bottom: 8px;
-            font-size: 0.95em;
-        }
-        
-        .market-analysis, .personal-analysis, .rating-explanation {
-            margin-bottom: 12px;
-        }
-        
-        .analysis-footer {
-            text-align: center;
-            margin-top: 30px;
-            padding-top: 20px;
-            border-top: 1px solid #eee;
-            color: #666;
-        }
+            .vaitengewon-map-section .idea-card { border: 1px solid #e0e0e0; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+            .vaitengewon-map-section .idea-header { background-color: #f7f5fa; padding: 15px; border-bottom: 1px solid #e0e0e0; display: flex; justify-content: space-between; align-items: center; }
+            .vaitengewon-map-section .idea-header h3 { margin: 0; font-family: 'Ubuntu', sans-serif; color: #7030A0; font-size: 1.2em; }
+            .vaitengewon-map-section .score { font-weight: bold; color: #333; }
+            .vaitengewon-map-section .score .stars { color: #ffc107; font-size: 1.3em; }
+            .vaitengewon-map-section .idea-body { padding: 20px; }
+            .vaitengewon-map-section .idea-body h4 { margin-top: 0; font-family: 'Ubuntu', sans-serif; color: #555; }
+            .vaitengewon-map-section .idea-body p { margin-bottom: 10px; }
         </style>
         """
         
-        return html
+        print(">>> HTML generado exitosamente.")
+        return styles + html_cards
         
     except Exception as e:
-        logger.error(f"Error generando HTML: {e}")
-        return f"<p>Error generando reporte: {str(e)}</p>"
+        print(f"!!! Error al generar el HTML: {e}")
+        return "<p>Hubo un error al formatear el resultado del análisis.</p>"
+
+def enviar_resultado_a_wordpress(user_id, html_content):
+    """Envía el informe HTML de vuelta a WordPress."""
+    print(">>> Iniciando envío a WordPress...")
+    url = os.getenv("WORDPRESS_API_URL")
+    api_key = os.getenv("WORDPRESS_API_KEY")
+
+    if not url or not api_key:
+        print("!!! Error: Faltan variables de entorno WORDPRESS_API_URL o WORDPRESS_API_KEY")
+        return False
+    
+    headers = { 'Content-Type': 'application/json', 'X-API-KEY': api_key }
+    payload = { 'wp_user_id': user_id, 'html_result': html_content }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        print(f">>> Respuesta de WordPress: {response.json()}")
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"!!! Error al enviar datos a WordPress: {e}")
+        return False
 
 # --- ENDPOINT PRINCIPAL ---
-@app.route("/analizar-idea", methods=['POST', 'OPTIONS'])
+@app.route("/analizar-idea", methods=['POST'])
 def analizar_idea():
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    logger.info(f"[{timestamp}] Solicitud recibida en /analizar-idea - Método: {request.method}")
-    logger.info(f"[{timestamp}] Headers: {dict(request.headers)}")
-    logger.info(f"[{timestamp}] IP remota: {request.remote_addr}")
+    datos_recibidos = request.get_json()
+    if not datos_recibidos: return jsonify({"error": "No se recibieron datos"}), 400
     
-    # Manejar preflight OPTIONS request
-    if request.method == 'OPTIONS':
-        logger.info(f"[{timestamp}] Procesando preflight OPTIONS request")
-        response = jsonify({'status': 'ok', 'message': 'CORS preflight successful'})
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Accept, Origin, X-Requested-With')
-        response.headers.add('Access-Control-Max-Age', '86400')
-        return response
+    print("\n--- INICIO DE NUEVA SOLICITUD ---")
     
-    try:
-        datos_recibidos = request.get_json()
-        if not datos_recibidos:
-            logger.warning(f"[{timestamp}] No se recibieron datos JSON")
-            logger.info(f"[{timestamp}] Raw data: {request.get_data()}")
-            return jsonify({"error": "No se recibieron datos JSON"}), 400
+    analysis_result = analyze_business_ideas(datos_recibidos)
+    if "error" in analysis_result:
+        return jsonify({"error": analysis_result["error"]}), 500
+    
+    html_final = generate_html_report(analysis_result)
+    
+    exito_envio = enviar_resultado_a_wordpress(datos_recibidos.get('wp_user_id'), html_final)
+    if not exito_envio:
+        return jsonify({"error": "Fallo al guardar el resultado en WordPress"}), 500
 
-        logger.info(f"[{timestamp}] --- DATOS RECIBIDOS DESDE WORDPRESS ---")
-        logger.info(f"[{timestamp}] Datos: {datos_recibidos}")
-        logger.info(f"[{timestamp}] ---------------------------------------")
+    return jsonify({"status": "exito", "mensaje": "Análisis completado y guardado en WordPress."})
 
-        wp_user_id = datos_recibidos.get('wp_user_id')
-        logger.info(f"[{timestamp}] Análisis solicitado por el usuario con ID de WP: {wp_user_id}")
-
-        # Procesar datos del usuario
-        logger.info(f"[{timestamp}] Iniciando análisis de ideas de negocio...")
-        
-        # Analizar ideas de negocio con OpenAI
-        analysis_result = analyze_business_ideas(datos_recibidos)
-        
-        if analysis_result.get('error'):
-            logger.error(f"[{timestamp}] Error en análisis: {analysis_result['error']}")
-            return jsonify({
-                "status": "error",
-                "mensaje": f"Error en el análisis: {analysis_result['error']}",
-                "usuario_id_confirmado": wp_user_id,
-                "timestamp": timestamp
-            }), 500
-        
-        # Generar HTML para WordPress
-        html_report = generate_html_report(analysis_result, datos_recibidos)
-        
-        respuesta_para_wordpress = {
-            "status": "exito",
-            "mensaje": "Análisis de ideas de negocio completado exitosamente.",
-            "usuario_id_confirmado": wp_user_id,
-            "timestamp": timestamp,
-            "analisis_completo": analysis_result,
-            "html_report": html_report,
-            "ideas_generadas": len(analysis_result.get('ideas', []))
-        }
-        
-        response = jsonify(respuesta_para_wordpress)
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        logger.info(f"[{timestamp}] Análisis completado. Ideas generadas: {len(analysis_result.get('ideas', []))}")
-        return response
-        
-    except Exception as e:
-        logger.error(f"[{timestamp}] Error procesando solicitud: {str(e)}")
-        return jsonify({"error": f"Error interno: {str(e)}"}), 500
-
-# --- ENDPOINTS DE DIAGNÓSTICO ---
+# Ruta de verificación
 @app.route("/")
 def index():
-    return "El Cerebro IA está online y listo para recibir datos en /analizar-idea."
-
-@app.route("/health", methods=['GET'])
-def health_check():
-    """Endpoint de verificación de salud"""
-    return jsonify({
-        "status": "healthy",
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "service": "vaitengewon-validator",
-        "version": "1.0.0"
-    })
-
-@app.route("/test-cors", methods=['GET', 'POST', 'OPTIONS'])
-def test_cors():
-    """Endpoint para probar CORS desde WordPress"""
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    logger.info(f"[{timestamp}] Test CORS endpoint called - Method: {request.method}")
-    
-    if request.method == 'OPTIONS':
-        response = jsonify({'status': 'ok', 'message': 'CORS test successful'})
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        response.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Accept, Origin, X-Requested-With')
-        return response
-    
-    response = jsonify({
-        "status": "success",
-        "message": "CORS test successful",
-        "timestamp": timestamp,
-        "method": request.method,
-        "headers_received": dict(request.headers)
-    })
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    return response
-
-@app.route("/test-post", methods=['POST', 'OPTIONS'])
-def test_post():
-    """Endpoint para probar envío de datos POST"""
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    logger.info(f"[{timestamp}] Test POST endpoint called")
-    
-    if request.method == 'OPTIONS':
-        response = jsonify({'status': 'ok'})
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Accept, Origin, X-Requested-With')
-        return response
-    
-    try:
-        data = request.get_json() or {}
-        logger.info(f"[{timestamp}] Test POST data received: {data}")
-        
-        response = jsonify({
-            "status": "success",
-            "message": "Test POST successful",
-            "timestamp": timestamp,
-            "data_received": data,
-            "data_type": type(data).__name__
-        })
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        return response
-        
-    except Exception as e:
-        logger.error(f"[{timestamp}] Error in test POST: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+    return "El Cerebro IA está online."
