@@ -33,8 +33,8 @@ def analyze_business_ideas(user_data):
         - Estilo de Vida Deseado: {user_data.get('estilo_vida_deseado', 'No especificado')}
 
         TU TAREA PRINCIPAL:
-        Genera 5 ideas de negocio específicas, innovadoras y viables que se alineen perfectamente con el perfil completo del emprendedor. Si el emprendedor ya proporcionó una idea, úsala como inspiración para la primera idea y luego genera 4 alternativas superiores o complementarias.
-
+        Genera 5 ideas de negocio específicas, innovadoras y viables que se alineen perfectamente con el perfil completo del emprendedor. Si el emprendedor ya proporcionó una idea, úsala como inspiración para la primera idea y luego genera 4 alternativas superiores o complementarias. Y debes analizarlas respecto al mercado, para saber si es una idea que se emprenderá en un oceano azul o rojo.
+        
         PARA CADA UNA DE LAS 5 IDEAS, DEBES PROPORCIONAR:
         1.  "nombre": Un nombre atractivo para la idea de negocio.
         2.  "descripcion": Una descripción concisa y potente (2-3 frases).
